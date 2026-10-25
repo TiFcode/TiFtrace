@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>TiFtrace ✍️</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: linear-gradient(180deg, #f7fbff 0%, #eef6ff 100%);
+      color: #13304b;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .topbar {
+      padding: 12px 14px 10px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    h1 { font-size: clamp(1.4rem, 5vw, 2.2rem); }
+    .subtitle { margin-top: 4px; color: #4f6e8f; font-size: clamp(.85rem, 2.8vw, 1rem); }
+    .hud {
+      display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap;
+      padding: 0 12px 10px; flex-shrink: 0;
+    }
+    .pill {
+      background: #ffffff; border: 2px solid #d8ebff; border-radius: 999px; padding: 8px 14px;
+      box-shadow: 0 4px 14px rgba(46, 111, 182, 0.08); font-weight: 700; font-size: .95rem;
+    }
+    .pill strong { color: #ff8a3d; }
+    .actions { display: flex; gap: 8px; }
+    button {
+      border: 0; border-radius: 999px; padding: 10px 16px; font: inherit; font-weight: 800;
+      cursor: pointer; color: white; box-shadow: 0 8px 18px rgba(0,0,0,.12);
+    }
+    .reset-btn { background: linear-gradient(135deg, #6ba9ff, #4f86f7); }
+    .show-btn { background: linear-gradient(135deg, #ffb14a, #ff8a3d); }
+    .stage-wrap { flex: 1; min-height: 0; padding: 0 12px 12px; }
+    .stage {
+      position: relative; width: 100%; height: 100%; background: white; border-radius: 24px;
+      border: 4px solid #dff0ff; box-shadow: 0 18px 50px rgba(79, 134, 247, .14);
+      overflow: hidden; touch-action: none;
+    }
+    canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .guide-legend {
+      position: absolute; left: 12px; bottom: 12px; background: rgba(255,255,255,.92); border-radius: 16px;
+      padding: 10px 12px; font-size: .85rem; color: #496682; box-shadow: 0 8px 22px rgba(0,0,0,.1);
+    }
+    .legend-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+    .legend-row:first-child { margin-top: 0; }
+    .swatch { width: 22px; height: 8px; border-radius: 999px; }
+    .overlay {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: rgba(16, 44, 76, .12); pointer-events: none; opacity: 0; transition: opacity .25s;
+    }
+    .overlay.show { opacity: 1; }
+    .card {
+      background: white; border-radius: 24px; padding: 18px 20px; text-align: center; max-width: min(92vw, 420px);
+      box-shadow: 0 18px 50px rgba(0,0,0,.14);
+    }
+    .card h2 { font-size: clamp(1.3rem, 5vw, 2rem); margin-bottom: 8px; }
+    .card p { color: #53718d; line-height: 1.45; }
+    .hint {
+      position: absolute; top: 12px; right: 12px; background: rgba(255,255,255,.94); color: #40617f;
+      border-radius: 16px; padding: 8px 12px; font-size: .85rem; box-shadow: 0 8px 22px rgba(0,0,0,.1);
+      max-width: min(48vw, 280px);
+    }
+    @media (max-width: 640px) {
+      .hud { gap: 8px; }
+      .pill { font-size: .85rem; padding: 7px 12px; }
+      button { padding: 10px 14px; }
+      .guide-legend { font-size: .78rem; }
+      .hint { max-width: 60vw; font-size: .78rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <h1>✍️ TiFtrace</h1>
+    <div class="subtitle">Trace the light-blue line, one segment at a time.</div>
+  </div>
+
+  <div class="hud">
+    <div class="pill">Segment <strong id="segmentNow">1</strong> / <span id="segmentTotal">0</span></div>
+    <div class="pill">Progress <strong id="progressPct">0%</strong></div>
+    <div class="actions">
+      <button class="show-btn" id="showBtn">👀 Show picture</button>
+      <button class="reset-btn" id="resetBtn">↺ Start again</button>
+    </div>
+  </div>
+
+  <div class="stage-wrap">
+    <div class="stage" id="stage">
+      <canvas id="guideCanvas"></canvas>
+      <canvas id="drawCanvas"></canvas>
+      <div class="hint" id="hint">Draw on top of the glowing blue segment.</div>
+      <div class="guide-legend">
+        <div class="legend-row"><span class="swatch" style="background:#90d6ff"></span> target line</div>
+        <div class="legend-row"><span class="swatch" style="background:#ff8a3d"></span> your line</div>
+      </div>
+      <div class="overlay" id="overlay">
+        <div class="card" id="overlayCard">
+          <h2>🎉 Ready?</h2>
+          <p>Follow the blue segment with your finger or mouse. When you cover it, the next one lights up.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const guideCanvas = document.getElementById('guideCanvas');
+    const drawCanvas = document.getElementById('drawCanvas');
+    const gctx = guideCanvas.getContext('2d');
+    const dctx = drawCanvas.getContext('2d');
+    const stage = document.getElementById('stage');
+    const overlay = document.getElementById('overlay');
+    const overlayCard = document.getElementById('overlayCard');
+    const segmentNowEl = document.getElementById('segmentNow');
+    const segmentTotalEl = document.getElementById('segmentTotal');
+    const progressPctEl = document.getElementById('progressPct');
+    const hintEl = document.getElementById('hint');
+
+    const VIEW = { width: 1000, height: 1000 };
+    const GUIDE_COLOR = '#90d6ff';
+    const GUIDE_GLOW = '#d8f2ff';
+    const DRAW_COLOR = '#ff8a3d';
+    const DRAW_WIDTH = 16;
+    const CHECK_RADIUS = 28;
+    const ADVANCE_THRESHOLD = 0.72;
+
+    let segments = [];
+    let currentIndex = 0;
+    let completed = new Set();
+    let isDrawing = false;
+    let lastPoint = null;
+    let showReference = false;
+    const coverage = new Map();
+    const referenceImg = new Image();
+    referenceImg.src = 'reference.jpg';
+
+    function resizeCanvases() {
+      const rect = stage.getBoundingClientRect();
+      for (const c of [guideCanvas, drawCanvas]) {
+        c.width = Math.round(rect.width * devicePixelRatio);
+        c.height = Math.round(rect.height * devicePixelRatio);
+      }
+      drawGuide();
+      redrawPlayerStrokes();
+    }
+
+    function viewToCanvas(pt) {
+      const scale = Math.min(stage.clientWidth / VIEW.width, stage.clientHeight / VIEW.height);
+      const offsetX = (stage.clientWidth - VIEW.width * scale) / 2;
+      const offsetY = (stage.clientHeight - VIEW.height * scale) / 2;
+      return { x: pt[0] * scale + offsetX, y: pt[1] * scale + offsetY };
+    }
+
+    function clientToView(clientX, clientY) {
+      const rect = stage.getBoundingClientRect();
+      const scale = Math.min(rect.width / VIEW.width, rect.height / VIEW.height);
+      const offsetX = (rect.width - VIEW.width * scale) / 2;
+      const offsetY = (rect.height - VIEW.height * scale) / 2;
+      return {
+        x: (clientX - rect.left - offsetX) / scale,
+        y: (clientY - rect.top - offsetY) / scale,
+        valid: clientX - rect.left >= offsetX && clientY - rect.top >= offsetY && clientX - rect.left <= rect.width - offsetX && clientY - rect.top <= rect.height - offsetY,
+      };
+    }
+
+    function segmentLength(seg) {
+      let total = 0;
+      for (let i = 1; i < seg.points.length; i++) {
+        const a = seg.points[i - 1];
+        const b = seg.points[i];
+        total += Math.hypot(b[0] - a[0], b[1] - a[1]);
+      }
+      return total;
+    }
+
+    function buildSamplePoints(seg) {
+      const samples = [];
+      for (let i = 1; i < seg.points.length; i++) {
+        const a = seg.points[i - 1];
+        const b = seg.points[i];
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const steps = Math.max(2, Math.ceil(len / 12));
+        for (let s = 0; s <= steps; s++) {
+          const t = s / steps;
+          samples.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+        }
+      }
+      return samples;
+    }
+
+    function drawPolyline(ctx, seg, color, width, glow = false) {
+      if (!seg?.points?.length) return;
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      if (glow) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 18;
+      }
+      ctx.beginPath();
+      const start = viewToCanvas(seg.points[0]);
+      ctx.moveTo(start.x * devicePixelRatio, start.y * devicePixelRatio);
+      for (let i = 1; i < seg.points.length; i++) {
+        const p = viewToCanvas(seg.points[i]);
+        ctx.lineTo(p.x * devicePixelRatio, p.y * devicePixelRatio);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawGuide() {
+      gctx.clearRect(0, 0, guideCanvas.width, guideCanvas.height);
+      if (showReference && referenceImg.complete) {
+        const scale = Math.min(stage.clientWidth / referenceImg.width, stage.clientHeight / referenceImg.height) * devicePixelRatio * 0.86;
+        const w = referenceImg.width * scale;
+        const h = referenceImg.height * scale;
+        const x = (guideCanvas.width - w) / 2;
+        const y = (guideCanvas.height - h) / 2;
+        gctx.save();
+        gctx.globalAlpha = 0.18;
+        gctx.drawImage(referenceImg, x, y, w, h);
+        gctx.restore();
+      }
+      segments.forEach((seg, idx) => {
+        if (idx < currentIndex) {
+          drawPolyline(gctx, seg, '#d9eefc', 8, false);
+        } else if (idx === currentIndex) {
+          drawPolyline(gctx, seg, GUIDE_GLOW, 18, true);
+          drawPolyline(gctx, seg, GUIDE_COLOR, 10, false);
+        } else {
+          drawPolyline(gctx, seg, '#cbe9ff', 8, false);
+        }
+      });
+    }
+
+    function redrawPlayerStrokes() {
+      dctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+      dctx.save();
+      dctx.lineCap = 'round';
+      dctx.lineJoin = 'round';
+      dctx.strokeStyle = DRAW_COLOR;
+      dctx.lineWidth = DRAW_WIDTH * devicePixelRatio;
+      segments.forEach(seg => {
+        if (!seg.drawn || seg.drawn.length < 2) return;
+        dctx.beginPath();
+        const start = viewToCanvas(seg.drawn[0]);
+        dctx.moveTo(start.x * devicePixelRatio, start.y * devicePixelRatio);
+        for (let i = 1; i < seg.drawn.length; i++) {
+          const p = viewToCanvas(seg.drawn[i]);
+          dctx.lineTo(p.x * devicePixelRatio, p.y * devicePixelRatio);
+        }
+        dctx.stroke();
+      });
+      dctx.restore();
+    }
+
+    function updateHUD() {
+      const total = segments.length || 1;
+      segmentNowEl.textContent = Math.min(currentIndex + 1, total);
+      segmentTotalEl.textContent = total;
+      progressPctEl.textContent = `${Math.round((completed.size / total) * 100)}%`;
+      if (currentIndex < segments.length) {
+        const seg = segments[currentIndex];
+        const frac = coverage.get(currentIndex) || 0;
+        hintEl.textContent = frac > 0.45 ? 'Nice. Keep following the blue segment.' : 'Start on the glowing blue segment.';
+      } else {
+        hintEl.textContent = 'Finished!';
+      }
+    }
+
+    function distancePointToSegment(p, a, b) {
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      if (dx === 0 && dy === 0) return Math.hypot(p[0] - a[0], p[1] - a[1]);
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy)));
+      const px = a[0] + dx * t;
+      const py = a[1] + dy * t;
+      return Math.hypot(p[0] - px, p[1] - py);
+    }
+
+    function stampCoverage(point) {
+      const seg = segments[currentIndex];
+      if (!seg) return;
+      let hits = 0;
+      seg.samples.forEach((sample, idx) => {
+        if (seg.hit[idx]) return;
+        if (Math.hypot(sample[0] - point[0], sample[1] - point[1]) <= CHECK_RADIUS) {
+          seg.hit[idx] = true;
+          hits++;
+        }
+      });
+      if (hits > 0) {
+        const fraction = seg.hit.filter(Boolean).length / seg.hit.length;
+        coverage.set(currentIndex, fraction);
+        if (fraction >= ADVANCE_THRESHOLD) {
+          finishSegment();
+        }
+      }
+    }
+
+    function stampLine(a, b) {
+      const steps = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 8));
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        stampCoverage([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+      }
+    }
+
+    function finishSegment() {
+      completed.add(currentIndex);
+      currentIndex++;
+      drawGuide();
+      updateHUD();
+      if (currentIndex >= segments.length) {
+        showWin();
+      }
+    }
+
+    function showWin() {
+      overlay.classList.add('show');
+      overlayCard.innerHTML = '<h2>🎉 Bravo!</h2><p>You traced the whole picture. Tap <strong>Start again</strong> if you want another round.</p>';
+    }
+
+    function startFresh() {
+      currentIndex = 0;
+      completed = new Set();
+      coverage.clear();
+      segments.forEach(seg => {
+        seg.drawn = [];
+        seg.samples = buildSamplePoints(seg);
+        seg.hit = new Array(seg.samples.length).fill(false);
+      });
+      overlay.classList.remove('show');
+      overlayCard.innerHTML = '<h2>🎉 Ready?</h2><p>Follow the blue segment with your finger or mouse. When you cover it, the next one lights up.</p>';
+      drawGuide();
+      redrawPlayerStrokes();
+      updateHUD();
+    }
+
+    function beginStroke(ev) {
+      if (currentIndex >= segments.length) return;
+      const p = clientToView(ev.clientX, ev.clientY);
+      if (!p.valid) return;
+      isDrawing = true;
+      lastPoint = [p.x, p.y];
+      const seg = segments[currentIndex];
+      if (!seg.drawn) seg.drawn = [];
+      seg.drawn.push(lastPoint);
+      stampCoverage(lastPoint);
+      redrawPlayerStrokes();
+    }
+
+    function moveStroke(ev) {
+      if (!isDrawing || currentIndex >= segments.length) return;
+      const p = clientToView(ev.clientX, ev.clientY);
+      if (!p.valid) return;
+      const point = [p.x, p.y];
+      const seg = segments[Math.min(currentIndex, segments.length - 1)];
+      seg.drawn.push(point);
+      stampLine(lastPoint, point);
+      lastPoint = point;
+      redrawPlayerStrokes();
+      updateHUD();
+    }
+
+    function endStroke() {
+      isDrawing = false;
+      lastPoint = null;
+    }
+
+    async function init() {
+      const response = await fetch('segments.json');
+      const data = await response.json();
+      segments = data.segments.filter(seg => segmentLength(seg) >= 14).map(seg => ({ ...seg, drawn: [] }));
+      segmentTotalEl.textContent = segments.length;
+      resizeCanvases();
+      startFresh();
+    }
+
+    stage.addEventListener('pointerdown', beginStroke);
+    stage.addEventListener('pointermove', moveStroke);
+    window.addEventListener('pointerup', endStroke);
+    window.addEventListener('pointercancel', endStroke);
+    window.addEventListener('resize', resizeCanvases);
+
+    document.getElementById('resetBtn').addEventListener('click', startFresh);
+    document.getElementById('showBtn').addEventListener('click', () => {
+      showReference = !showReference;
+      document.getElementById('showBtn').textContent = showReference ? '🙈 Hide picture' : '👀 Show picture';
+      drawGuide();
+    });
+
+    referenceImg.onload = drawGuide;
+    init().catch(err => {
+      console.error(err);
+      overlay.classList.add('show');
+      overlayCard.innerHTML = '<h2>⚠️ Oops</h2><p>The tracing picture could not load.</p>';
+    });
+  </script>
+</body>
+</html>
