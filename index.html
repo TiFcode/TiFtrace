@@ -351,6 +351,7 @@
       if (currentIndex >= segments.length) return;
       const p = clientToView(ev.clientX, ev.clientY);
       if (!p.valid) return;
+      stage.setPointerCapture?.(ev.pointerId);
       isDrawing = true;
       lastPoint = [p.x, p.y];
       const seg = segments[currentIndex];
@@ -373,9 +374,12 @@
       updateHUD();
     }
 
-    function endStroke() {
+    function endStroke(ev) {
       isDrawing = false;
       lastPoint = null;
+      if (ev?.pointerId != null && stage.hasPointerCapture?.(ev.pointerId)) {
+        stage.releasePointerCapture(ev.pointerId);
+      }
     }
 
     async function init() {
